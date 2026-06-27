@@ -30,7 +30,9 @@ Solr builds an **inverted index** — a lookup table mapping every term to the d
 - **Foreground** — documents matching your query (e.g., posts mentioning "ibuprofen")
 - **Background** — all documents in the collection
 
-A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Advil and motrin spike in ibuprofen posts; "the" and "a" do not — they're equally common everywhere. The result is an automatically discovered synonym and concept graph, grounded entirely in your corpus.
+A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Advil and motrin spike in ibuprofen posts; *the*, *and*, *a*, *of*, *its*, *they*, *with* do not — their frequency is roughly the same in every document regardless of topic, so their foreground and background distributions are nearly identical and their score lands near zero.
+
+No stop-word list required. The engine never needs to be told which words are meaningless; the statistics show it. The result is an automatically discovered concept graph grounded entirely in your corpus — terms that consistently appear in the same contexts surface as semantically related, whether or not a human ever labelled that relationship.
 
 **Under the hood:** the JSON facet request `skg.ts` sends to Solr looks like this:
 

@@ -1,8 +1,6 @@
 # solr-semantic-knowledge-graph
 
-Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a technique that treats Solr's inverted index as a graph. By measuring how terms co-occur across documents, it discovers semantic relationships purely from the statistical distribution of words in your own corpus. 
-
-No LLMs, no hand-coded synonyms, no external knowledge bases.
+Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a technique that treats Solr's inverted index as a graph. By measuring how terms co-occur across documents, it discovers semantic relationships purely from the statistical distribution of words in your own corpus, effectively turning your search index into both a knowledge graph and a language model. No LLMs, no hand-coded synonyms, no external knowledge bases.
 
 
 ---

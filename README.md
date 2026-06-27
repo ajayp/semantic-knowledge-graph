@@ -2,6 +2,24 @@
 
 Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a technique that treats Solr's inverted index as a graph. By measuring how terms co-occur across documents, it discovers semantic relationships purely from the statistical distribution of words in your own corpus, effectively turning your search index into both a knowledge graph and a language model. No LLMs, no hand-coded synonyms, no external knowledge bases.
 
+## Table of Contents
+
+- [What this is](#what-this-is)
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Running](#running)
+- [What each example shows](#what-each-example-shows)
+- [Architecture](#architecture)
+
+---
+
+This repo shows five things you can do with that capability:
+
+1. **Find related terms** — query any term, get back a ranked list of semantically similar terms
+2. **Cross-domain** — the same technique works on medical Q&A, sci-fi lore, cooking, travel, or anything else
+3. **Query expansion** — turn the SKG output into a boosted query string with five different precision/recall tradeoff strategies
+4. **Content-based recommendations** — classify document terms against a category to build a recommendation query
+5. **Arbitrary relationships** — compose traversal hops to ask graph-style questions ("what is Data's *daughter*?")
 
 ---
 
@@ -48,14 +66,6 @@ graph LR
 
 No medical ontology. No hand-coded synonyms. Just corpus statistics.
 
-This repo shows five things you can do with that capability:
-
-1. **Find related terms** — query any term, get back a ranked list of semantically similar terms
-2. **Cross-domain** — the same technique works on medical Q&A, sci-fi lore, cooking, travel, or anything else
-3. **Query expansion** — turn the SKG output into a boosted query string with five different precision/recall tradeoff strategies
-4. **Content-based recommendations** — classify document terms against a category to build a recommendation query
-5. **Arbitrary relationships** — compose traversal hops to ask graph-style questions ("what is Data's *daughter*?")
-
 ---
 
 ## Prerequisites
@@ -98,8 +108,6 @@ docker compose up -d
 # Install dependencies
 npm install
 
-# Configure Solr URL (defaults to http://localhost:8983/solr)
-cp .env.example .env
 ```
 
 ---

@@ -1,6 +1,8 @@
-# solr-skg-ts
+# solr-semantic-knowledge-graph
 
-Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a technique for discovering semantic relationships between terms using nothing but the statistical distribution of words in your own document corpus. No LLMs, no hand-coded synonyms, no external knowledge bases.
+Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a technique that treats Solr's inverted index as a graph. By measuring how terms co-occur across documents, it discovers semantic relationships purely from the statistical distribution of words in your own corpus. 
+
+No LLMs, no hand-coded synonyms, no external knowledge bases.
 
 
 ---
@@ -9,23 +11,23 @@ Proof-of-concept demonstrating Solr's **Semantic Knowledge Graph** — a techniq
 
 Solr builds an **inverted index** — a lookup table mapping every term to the documents it appears in, and how often. Solr's `relatedness()` facet function exploits this index by comparing two distributions:
 
-- **Foreground** — documents matching your query (e.g., posts mentioning "advil")
+- **Foreground** — documents matching your query (e.g., posts mentioning "ibuprofen")
 - **Background** — all documents in the collection
 
-A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Ibuprofen and motrin spike in advil posts; "the" and "a" do not — they're equally common everywhere. The result is an automatically discovered synonym and concept graph, grounded entirely in your corpus.
+A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Advil and motrin spike in ibuprofen posts; "the" and "a" do not — they're equally common everywhere. The result is an automatically discovered synonym and concept graph, grounded entirely in your corpus.
 
 **Under the hood:** the JSON facet request `skg.ts` sends to Solr looks like this:
 
 ```json
 {
-  "query": "content:advil",
+  "query": "content:ibuprofen",
   "facet": {
     "related_terms": {
       "type": "terms",
       "field": "content",
       "limit": 10,
       "facet": {
-        "relatedness": "relatedness(query('content:advil'), query('*:*'))"
+        "relatedness": "relatedness(query('content:ibuprofen'), query('*:*'))"
       }
     }
   }
@@ -38,12 +40,12 @@ The output is a weighted term graph — query any word and get back a ranked nei
 
 ```mermaid
 graph LR
-    advil(("advil")) --- |0.94| ibuprofen(("ibuprofen"))
-    advil --- |0.89| motrin(("motrin"))
-    advil --- |0.82| aleve(("aleve"))
-    advil --- |0.71| nsaid(("nsaid"))
-    advil --- |0.65| tylenol(("tylenol"))
-    advil --- |0.58| painkiller(("painkiller"))
+    ibuprofen(("ibuprofen")) --- |0.38| advil(("advil"))
+    ibuprofen --- |0.37| motrin(("motrin"))
+    ibuprofen --- |0.35| acetaminophen(("acetaminophen"))
+    ibuprofen --- |0.34| naproxen(("naproxen"))
+    ibuprofen --- |0.29| paracetamol(("paracetamol"))
+    ibuprofen --- |0.29| nsaids(("nsaids"))
 ```
 
 No medical ontology. No hand-coded synonyms. Just corpus statistics.
@@ -81,8 +83,8 @@ data/
 ## Setup
 
 ```bash
-git clone https://github.com/your-handle/solr-skg-ts.git
-cd solr-skg-ts
+git clone <this-repo>
+cd solr-semantic-knowledge-graph
 
 # Decompress the data files
 gunzip data/cooking/posts.csv.gz \
@@ -139,9 +141,9 @@ Runs five labeled examples against the indexed collections and prints results wi
 
 **Example 3 — Query Expansion (stackexchange):** Explores 5 distinct strategies to turn SKG terms into boosted Solr queries. Demonstrates how to balance precision and recall — an OR strategy expands matches by +755%, while a stricter "required + optional boost" strategy targets the highest-quality 268 posts.
 
-**Example 4 — Content-Based Recommendations (stackexchange):** Classifies a mixed bag of pop-culture terms against a "star wars" foreground. Star Wars terms score high, while DC comics terms (*gotham*, *batman*) score *negative*, filtering out the noise. The positive terms drive a boosted recommendation query to fetch highly relevant documents.
+**Example 4 — Content-Based Recommendations (stackexchange):** Classifies a mixed bag of pop-culture terms against a "star wars" foreground. Sci-fi terms score high, while DC comics terms (*gotham*, *batman*) score *negative*, filtering out the noise. Converts the positive terms into a boosted recommendation string to fetch highly relevant documents.
 
-**Example 5 — Arbitrary Relationships (scifi):** Two-hop traversal: `"data" → "daughter" → related terms`. By isolating posts where Data and daughter intersect, the index surfaces *Lal* (his daughter in TNG) and *Dahj* (his daughter in Picard) — bridging two TV shows filmed 30 years apart, with no knowledge graph or ontology.
+**Example 5 — Arbitrary Relationships (scifi):** Two-hop traversal: `"data" → "daughter" → related terms`. Data is the android character from Star Trek: The Next Generation. By isolating posts where Data and daughter intersect, the index surfaces *Lal* (his daughter in TNG) and *Dahj* (his daughter in Picard) — bridging two TV shows filmed 30 years apart, with no knowledge graph or ontology.
 
 ```mermaid
 graph TD

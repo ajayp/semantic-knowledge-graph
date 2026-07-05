@@ -1,16 +1,17 @@
 # solr-semantic-knowledge-graph
 
-Proof-of-concept demonstrating <a href="https://solr.apache.org" target="_blank">Solr</a>'s **Semantic Knowledge Graph** (SKG) — a graph implicit in your search index, where terms are nodes and the statistical relatedness between them forms weighted edges. An SKG lets you traverse and rank arbitrary semantic relationships between any content in your index, discovered purely from how terms co-occur across documents. No LLMs, no hand-coded synonyms, no external knowledge bases.
+A proof-of-concept for [Solr](https://solr.apache.org)'s **Semantic Knowledge Graph** (SKG): a graph hiding inside your search index, where terms are nodes and how often they co-occur becomes the weight on the edges between them. Once it's built, you can walk that graph to find and rank semantic relationships between any content in your index — no LLMs, no hand-coded synonym lists, no external knowledge base required.
 
 ## Table of Contents
 
 - [See it in action](#see-it-in-action)
-- [What this is](#what-this-is)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Running](#running)
   - [Run the demo examples](#run-the-demo-examples)
 - [What each example shows](#what-each-example-shows)
+- [How It Works](#how-it-works)
+- [The Math Under the Hood](#the-math-under-the-hood)
 - [Architecture](#architecture)
 
 ---
@@ -21,7 +22,7 @@ This repo shows five things you can do with that capability:
 2. **Cross-domain** — the same technique works on medical Q&A, sci-fi lore, cooking, travel, or anything else
 3. **Query expansion** — turn the SKG output into a boosted query string with five different precision/recall tradeoff strategies
 4. **Content-based recommendations** — classify document terms against a category to build a recommendation query
-5. **Arbitrary relationships** — compose traversal hops to ask graph-style questions ("what is Data's *daughter*?")
+5. **Arbitrary relationships** — compose traversal hops to ask graph-style questions (**_"who is Vader's son?"_**)
 
 ---
 
@@ -95,13 +96,13 @@ Term                 Relatedness
 [stackexchange] Query (or "exit"): exit
 ```
 
-Two strategic hops and no knowledge graph: ask "who is Vader's *son*?" and the top answer is *luke* — the corpus reconstructs "I am your father" purely from word co-occurrence across StackExchange posts, no screenplay or Wookieepedia required. A third hop (`vader > son > luke`) narrows further to characters and terms tied to Luke's own story. `back` undoes the last hop, `reset` starts over.
+Two strategic hops and no knowledge graph: ask **_"Who is Vader's son?"_** and the top answer is `luke` — the corpus reconstructs "I am your father" purely from word co-occurrence across StackExchange posts, no screenplay or Wookieepedia required. A third hop (`vader > son > luke`) narrows further to characters and terms tied to Luke's own story. `back` undoes the last hop, `reset` starts over.
 
 Prefer reading over running commands? [Jump straight to the demo output](#run-the-demo-examples) — five annotated examples covering all five capabilities, no setup required.
 
 ---
 
-Query "kryptonite" on a mixed StackExchange corpus and the index discovers other DC Universe terms on its own:
+Query **_"kryptonite"_** on a mixed StackExchange corpus and the index discovers other DC Universe terms on its own:
 
 ```
 Term                 Relatedness
@@ -115,7 +116,7 @@ Term                 Relatedness
   smallville           0.66332
 ```
 
-Chain two hops together and it can answer relationship questions with zero ontology: "who is Data's *daughter*?" surfaces the two android daughters from two different Star Trek series, decades apart:
+Chain two hops together and it can answer relationship questions with zero ontology: **_"Who is Data's daughter?"_** surfaces the two android daughters from two different Star Trek series, decades apart:
 
 ```
 Related to 'data' via 'daughter':
@@ -129,77 +130,6 @@ Term                 Relatedness
 ```
 
 Lal is Data's daughter from TNG "The Offspring"; Dahj is his daughter in Picard. These are two of five examples — full output including query expansion and content-based recommendations is in [Run the demo examples](#run-the-demo-examples).
-
----
-
-## What this is
-
-Solr builds an **inverted index** — a lookup table mapping every term to the documents it appears in, and how often. Solr's `relatedness()` facet function exploits this index by comparing two distributions:
-
-- **Foreground** — documents matching your query (e.g., posts mentioning "ibuprofen")
-- **Background** — all documents in the collection
-
-A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Advil and motrin spike in ibuprofen posts; *the*, *and*, *a*, *of*, *its*, *they*, *with* do not — their frequency is roughly the same in every document regardless of topic, so their foreground and background distributions are nearly identical and their score lands near zero.
-
-No stop-word list required. The engine never needs to be told which words are meaningless; the statistics show it. The result is an automatically discovered concept graph grounded entirely in your corpus — terms that consistently appear in the same contexts surface as semantically related, whether or not a human ever labelled that relationship.
-
-The two index structures do all the work:
-
-```mermaid
-graph LR
-    q(("ibuprofen"))
-
-    q -->|"inverted index"| d1["doc 1"]
-    q --> d2["doc 2"]
-    q --> d3["doc 3"]
-    q --> d4["doc 4"]
-    q --> d5["doc 5"]
-
-    d1 -->|"forward index"| advil(("advil"))
-    d2 --> advil
-    d1 --> motrin(("motrin"))
-    d3 --> motrin
-    d2 --> acetaminophen(("acetaminophen"))
-    d4 --> acetaminophen
-    d5 --> naproxen(("naproxen"))
-    d3 --> naproxen
-```
-
-The **inverted index** maps the query term to the documents it appears in (the foreground set). The **forward index** (Doc Values) then maps each of those documents back out to all the other terms they contain. Terms that appear across many of those documents — and rarely outside them — score highest.
-
-**Under the hood:** the JSON facet request `skg.ts` sends to Solr looks like this:
-
-```json
-{
-  "query": "content:ibuprofen",
-  "facet": {
-    "related_terms": {
-      "type": "terms",
-      "field": "content",
-      "limit": 10,
-      "facet": {
-        "relatedness": "relatedness(query('content:ibuprofen'), query('*:*'))"
-      }
-    }
-  }
-}
-```
-
-The inner `relatedness()` call is the key: the first argument is the foreground query, the second (`*:*`) is the background. Solr scores each candidate term by how much its document frequency shifts between the two sets.
-
-The output is a weighted term graph — query any word and get back a ranked neighborhood of semantically related concepts:
-
-```mermaid
-graph LR
-    ibuprofen(("ibuprofen")) --- |0.38| advil(("advil"))
-    ibuprofen --- |0.37| motrin(("motrin"))
-    ibuprofen --- |0.35| acetaminophen(("acetaminophen"))
-    ibuprofen --- |0.34| naproxen(("naproxen"))
-    ibuprofen --- |0.29| paracetamol(("paracetamol"))
-    ibuprofen --- |0.29| nsaids(("nsaids"))
-```
-
-No medical ontology. No hand-coded synonyms. Just corpus statistics.
 
 ---
 
@@ -426,75 +356,111 @@ npm run query
 
 Prompts for a term, runs it against the `stackexchange` collection, and prints the SKG's related-terms table — a quick way to explore relatedness on your own words without editing `demo.ts`. Enter another term afterward to drill down a hop (a relationship filter on top of the current path, same technique as Example 5's `"data" → "daughter"` traversal). Type `back` to undo the last hop, `reset` to start over, or `exit` to quit. See [See it in action](#see-it-in-action) above for a full multi-hop transcript.
 
-```
-[stackexchange] Query (or "exit"): sith
-
-Term                 Relatedness
------------------------------------
-  jedi                 0.88072
-  darth                0.86224
-  palpatine            0.85524
-  sidious              0.84872
-  anakin               0.83176
-  revenge              0.82704
-  vader                0.81471
-  apprentice           0.80022
-  dooku                0.79961
-
-[stackexchange] sith > apprentice
-
-Term                 Relatedness
------------------------------------
-  sidious              0.83040
-  darth                0.80750
-  apprentices          0.77806
-  plagueis             0.77609
-  palpatine            0.75680
-  maul                 0.74240
-  zannah               0.73174
-  dooku                0.71495
-
-[stackexchange] sith > apprentice > back
-
-[stackexchange] sith > reset
-
-[stackexchange] Query (or "exit"): bucky
-
-Term                 Relatedness
------------------------------------
-  bucky's              0.77994
-  hydra's              0.44083
-  steve                0.41334
-  suv                  0.39399
-  barnes               0.38147
-  peggy                0.36061
-  cap's                0.34181
-  soldier              0.31762
-  bucharest            0.28756
-```
-
 ---
 
 ## What each example shows
 
-**Example 1 — Related Terms (health):** Queries "ibuprofen" against the health collection. It instantly surfaces *advil*, *motrin*, *acetaminophen*, and *naproxen* — discovering OTC pain-relief synonyms and generic/brand pairings purely via word distribution.
+**Example 1 — Related Terms (health):** Queries **_"ibuprofen"_** against the health collection. It instantly surfaces *advil*, *motrin*, *acetaminophen*, and *naproxen* — discovering OTC pain-relief synonyms and generic/brand pairings purely via word distribution.
 
-**Example 2 — Domain Switch (stackexchange):** Runs the exact same code against a multi-domain collection using the query "kryptonite". Without any external dictionary, the SKG immediately shifts domains to surface *superman*, *kryptonians*, and *smallville*.
+**Example 2 — Domain Switch (stackexchange):** Runs the exact same code against a multi-domain collection using the query **_"kryptonite"_**. Without any external dictionary, the SKG immediately shifts domains to surface *superman*, *kryptonians*, and *smallville*.
 
 **Example 3 — Query Expansion (stackexchange):** Explores 5 distinct strategies to turn SKG terms into boosted Solr queries. Demonstrates how to balance precision and recall — an OR strategy expands matches by +764%, while a stricter "required + optional boost" strategy targets the highest-quality 270 posts.
 
-**Example 4 — Content-Based Recommendations (stackexchange):** Classifies a mixed bag of pop-culture terms against a "star wars" foreground. Sci-fi terms score high, while DC comics terms (*gotham*, *batman*) score *negative*, filtering out the noise. Converts the positive terms into a boosted recommendation string to fetch highly relevant documents.
+**Example 4 — Content-Based Recommendations (stackexchange):** Classifies a mixed bag of pop-culture terms against a **_"star wars"_** foreground. Sci-fi terms score high, while DC comics terms (*gotham*, *batman*) score *negative*, filtering out the noise. Converts the positive terms into a boosted recommendation string to fetch highly relevant documents.
 
 **Example 5 — Arbitrary Relationships (scifi):** Two-hop traversal: `"data" → "daughter" → related terms`. Data is the android character from Star Trek: The Next Generation. By isolating posts where Data and daughter intersect, the index surfaces *Lal* (his daughter in TNG) and *Dahj* (his daughter in Picard) — bridging two TV shows filmed 30 years apart, with no knowledge graph or ontology.
 
 ```mermaid
-graph TD
+graph LR
     data(("data")) --> daughter{{"daughter posts"}}
     daughter -->|0.75| lal(("lal"))
     daughter -->|0.65| dahj(("dahj"))
     daughter -->|0.45| juliana(("juliana"))
     daughter -->|0.36| soong(("soong"))
 ```
+
+---
+
+## How It Works
+
+Solr builds an **inverted index** — a lookup table mapping every term to the documents it appears in, and how often. Solr's `relatedness()` facet function exploits this index by comparing two distributions:
+
+- **Foreground** — documents matching your query (e.g., posts mentioning "ibuprofen")
+- **Background** — all documents in the collection
+
+A term gets a **high relatedness score** when it appears *much more often* in the foreground than in the background. Advil and motrin spike in ibuprofen posts; *the*, *and*, *a*, *of*, *its*, *they*, *with* do not — their frequency is roughly the same in every document regardless of topic, so their foreground and background distributions are nearly identical and their score lands near zero.
+
+No stop-word list required. The engine never needs to be told which words are meaningless; the statistics show it. The result is an automatically discovered concept graph grounded entirely in your corpus — terms that consistently appear in the same contexts surface as semantically related, whether or not a human ever labelled that relationship.
+
+The two index structures do all the work:
+
+```mermaid
+graph LR
+    q(("ibuprofen"))
+
+    q -->|"inverted index"| d1["doc 1"]
+    q --> d2["doc 2"]
+    q --> d3["doc 3"]
+    q --> d4["doc 4"]
+    q --> d5["doc 5"]
+
+    d1 -->|"forward index"| advil(("advil"))
+    d2 --> advil
+    d1 --> motrin(("motrin"))
+    d3 --> motrin
+    d2 --> acetaminophen(("acetaminophen"))
+    d4 --> acetaminophen
+    d5 --> naproxen(("naproxen"))
+    d3 --> naproxen
+```
+
+The **inverted index** maps the query term to the documents it appears in (the foreground set). The **forward index** (Doc Values) then maps each of those documents back out to all the other terms they contain. Terms that appear across many of those documents — and rarely outside them — score highest.
+
+**Under the hood:** the JSON facet request `skg.ts` sends to Solr looks like this:
+
+```json
+{
+  "query": "content:ibuprofen",
+  "facet": {
+    "related_terms": {
+      "type": "terms",
+      "field": "content",
+      "limit": 10,
+      "facet": {
+        "relatedness": "relatedness(query('content:ibuprofen'), query('*:*'))"
+      }
+    }
+  }
+}
+```
+
+The inner `relatedness()` call is the key: the first argument is the foreground query, the second (`*:*`) is the background. Solr scores each candidate term by how much its document frequency shifts between the two sets.
+
+The output is a weighted term graph — query any word and get back a ranked neighborhood of semantically related concepts:
+
+```mermaid
+graph LR
+    ibuprofen(("ibuprofen")) --- |0.38| advil(("advil"))
+    ibuprofen --- |0.37| motrin(("motrin"))
+    ibuprofen --- |0.35| acetaminophen(("acetaminophen"))
+    ibuprofen --- |0.34| naproxen(("naproxen"))
+    ibuprofen --- |0.29| paracetamol(("paracetamol"))
+    ibuprofen --- |0.29| nsaids(("nsaids"))
+```
+
+---
+
+## The Math Under the Hood
+
+Solr's `relatedness()` calculation is not a naive percentage shift. It scales via a modified statistical significance calculation designed to balance popularity against specificity, bounding the resulting scores between `-1.0` and `+1.0`.
+
+For a given term $T$, a foreground query $F$, and a background corpus $B$, the score evaluates the divergence between the observed probability $P(T|F)$ and the expected baseline probability $P(T|B)$:
+
+$$\text{Relatedness} = f\left( P(T|F), P(T|B) \right)$$
+
+*   **Positive scores (0.0 to 1.0):** The term occurs significantly *more* frequently in the foreground than expected.
+*   **Zero score (0.0):** The term mimics general background distribution (e.g., stop words, syntax tokens).
+*   **Negative scores (-1.0 to 0.0):** The term is explicitly *anti-correlated* or actively avoided within the foreground context.
 
 ---
 
@@ -507,3 +473,4 @@ graph TD
 | [src/skg.ts](src/skg.ts) | `buildRequest`, `traverse`, `buildExpandedQuery` |
 | [src/index.ts](src/index.ts) | `npm run index` entry point |
 | [src/demo.ts](src/demo.ts) | `npm run demo` entry point |
+| [src/cli.ts](src/cli.ts) | `npm run query` entry point — interactive multi-hop traversal |

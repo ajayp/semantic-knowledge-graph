@@ -1,5 +1,5 @@
 {
-  "name": "solr-semantic-knowledge-graph",
+  "name": "semantic-knowledge-graph",
   "version": "1.0.0",
   "description": "Solr Semantic Knowledge Graph demo in TypeScript",
   "type": "commonjs",

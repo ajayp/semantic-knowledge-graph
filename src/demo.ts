@@ -8,13 +8,13 @@ function section(title: string) {
 }
 
 function printRelatedTerms(graph: TraversalFacet[], query: string, exclude: string[] = []) {
-  const queryNode = graph[0]?.values[query];
+  const queryNode = graph[0]?.values.get(query);
   if (!queryNode?.traversals) {
     console.log("(no results)");
     return;
   }
   const skip = new Set([query, ...exclude]);
-  for (const [term, data] of Object.entries(queryNode.traversals[0].values)) {
+  for (const [term, data] of queryNode.traversals[0].values) {
     if (skip.has(term)) continue;
     console.log(`  ${term.padEnd(20)} ${data.relatedness.toFixed(5)}`);
   }
@@ -35,7 +35,9 @@ a high relatedness score. Score guide:
 
   const traversal = await traverse(
     "health",
-    { field: "body", values: ["ibuprofen"] },
+    { field: "title body", values: ["ibuprofen"] },
+    // minOccurrences > 1: a term appearing in just 1 doc can still score near-1.0
+    // relatedness by coincidence — requiring 2+ filters out that single-doc noise.
     { field: "body", minOccurrences: 2, limit: 8 }
   );
 
@@ -61,7 +63,7 @@ to be other DC Universe terms — the corpus "knows" the domain.
 
   const traversal = await traverse(
     "stackexchange",
-    { field: "body", values: ["kryptonite"] },
+    { field: "title body", values: ["kryptonite"] },
     { field: "body", minOccurrences: 2, limit: 8 }
   );
 
@@ -77,7 +79,7 @@ async function countResults(query: string, params: Record<string, unknown>): Pro
   const res = await solrPost("/stackexchange/select", {
     query,
     limit: 0,
-    params: { defType: "edismax", qf: "body", ...params },
+    params: { defType: "edismax", qf: "title body", ...params },
   }) as { response: { numFound: number } };
   return res.response.numFound;
 }
@@ -87,7 +89,7 @@ async function example3() {
 
   const traversal = await traverse(
     "stackexchange",
-    { field: "body", values: ["kryptonite"] },
+    { field: "title body", values: ["kryptonite"] },
     { field: "body", minOccurrences: 2, limit: 8 }
   );
 
@@ -154,11 +156,11 @@ terms then drive a recommendation query to fetch similar posts.
 
   const traversal = await traverse(
     "stackexchange",
-    { field: "body", values: [classificationQuery] },
-    { field: "body", values: documentTerms }
+    { field: "title body", values: [classificationQuery] },
+    { field: "title body", values: documentTerms }
   );
 
-  const starWarsNode = traversal.graph[0]?.values[classificationQuery];
+  const starWarsNode = traversal.graph[0]?.values.get(classificationQuery);
   if (!starWarsNode?.traversals) {
     console.log("(no classification results)");
     return;
@@ -168,18 +170,18 @@ terms then drive a recommendation query to fetch similar posts.
   console.log("Term relatedness to 'star wars':");
   console.log("Term                 Relatedness  Note");
   console.log("-".repeat(55));
-  for (const [term, data] of Object.entries(termScores)) {
+  for (const [term, data] of termScores) {
     const note = data.relatedness <= 0 ? "  ← wrong franchise" : "";
     console.log(`  ${term.padEnd(20)} ${data.relatedness.toFixed(5)}${note}`);
   }
 
   // Build recommendation query from terms scoring above 0.25
-  const recQuery = Object.entries(termScores)
+  const recQuery = Array.from(termScores)
     .filter(([, node]) => node.relatedness > 0.25)
     .map(([term, node]) => `"${term}"^${node.relatedness.toFixed(5)}`)
     .join(" ");
 
-  const positiveCount = Object.values(termScores).filter(n => n.relatedness > 0.25).length;
+  const positiveCount = Array.from(termScores.values()).filter(n => n.relatedness > 0.25).length;
   console.log(`\nThe ${positiveCount} positive-scoring terms become a recommendation query. Top 5 matching posts:`);
 
   // Fetch top 5 matching documents
@@ -214,13 +216,13 @@ statistics with no knowledge graph or ontology.
 
   const traversal = await traverse(
     "scifi",
-    { field: "body", values: ["data"] },
-    { field: "body", values: ["daughter"], defaultOperator: "OR" },
+    { field: "title body", values: ["data"] },
+    { field: "title body", values: ["daughter"], defaultOperator: "OR" },
     { field: "body", minOccurrences: 5, limit: 10 }
   );
 
-  const dataNode = traversal.graph[0]?.values["data"];
-  const relationshipNode = dataNode?.traversals?.[0]?.values["daughter"];
+  const dataNode = traversal.graph[0]?.values.get("data");
+  const relationshipNode = dataNode?.traversals?.[0]?.values.get("daughter");
   if (!relationshipNode?.traversals) {
     console.log("(no results)");
     return;
@@ -230,7 +232,7 @@ statistics with no knowledge graph or ontology.
   console.log("Related to 'data' via 'daughter':");
   console.log("Term                 Relatedness");
   console.log("-".repeat(35));
-  for (const [term, d] of Object.entries(relationshipNode.traversals[0].values)) {
+  for (const [term, d] of relationshipNode.traversals[0].values) {
     if (skip.has(term)) continue;
     console.log(`  ${term.padEnd(20)} ${d.relatedness.toFixed(5)}`);
   }

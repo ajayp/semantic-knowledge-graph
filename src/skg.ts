@@ -17,7 +17,7 @@ export type ValueNode = {
 
 export type TraversalFacet = {
   name: string;
-  values: Record<string, ValueNode>;
+  values: Map<string, ValueNode>;
 };
 
 export type TraversalResult = {
@@ -55,7 +55,7 @@ function generateFacets(node: SKGNode & { name: string }): object[] {
     return values.map((_, i) => ({
       ...baseFacet,
       facet: { ...(baseFacet.facet as object) }, // each gets its own facet copy
-      query: `{!edismax q.op=${defaultOperator} qf=${field} v=$${name}_${i}_query}`,
+      query: `{!edismax q.op=${defaultOperator} qf='${field}' v=$${name}_${i}_query}`,
     }));
   }
 
@@ -103,9 +103,9 @@ export function buildRequest(...nodes: SKGNode[]): object {
   return request;
 }
 
-function sortByRelatednessDesc(values: Record<string, ValueNode>): Record<string, ValueNode> {
-  return Object.fromEntries(
-    Object.entries(values).sort(([, a], [, b]) => b.relatedness - a.relatedness)
+function sortByRelatednessDesc(values: Map<string, ValueNode>): Map<string, ValueNode> {
+  return new Map(
+    Array.from(values).sort(([, a], [, b]) => b.relatedness - a.relatedness)
   );
 }
 
@@ -136,22 +136,22 @@ function transformResponseFacet(
     const baseName = parts.slice(0, -1).join("_");
 
     if (!traversals[baseName]) {
-      traversals[baseName] = { name: baseName, values: {} };
+      traversals[baseName] = { name: baseName, values: new Map() };
     }
 
     const facetData = data as Record<string, unknown>;
 
     if (Array.isArray(facetData.buckets)) {
       // Terms facet: each bucket is a discovered term
-      const valuesNode: Record<string, ValueNode> = {};
+      const valuesNode: Map<string, ValueNode> = new Map();
       for (const bucket of facetData.buckets as Record<string, unknown>[]) {
-        valuesNode[String(bucket.val)] = transformNode(bucket, responseParams);
+        valuesNode.set(String(bucket.val), transformNode(bucket, responseParams));
       }
       traversals[baseName].values = valuesNode;
     } else {
       // Query facet: look up the original query string from params
       const valueName = String(responseParams[`${fullName}_query`]);
-      traversals[baseName].values[valueName] = transformNode(facetData, responseParams);
+      traversals[baseName].values.set(valueName, transformNode(facetData, responseParams));
     }
   }
 
@@ -181,11 +181,11 @@ export function buildExpandedQuery(
   query: string,
   threshold = 0.0
 ): string {
-  const queryNode = traversal.graph[0]?.values[query];
+  const queryNode = traversal.graph[0]?.values.get(query);
   if (!queryNode?.traversals) return `${query}^5`;
 
   const relatedTerms = queryNode.traversals[0].values;
-  const expansion = Object.entries(relatedTerms)
+  const expansion = Array.from(relatedTerms)
     .filter(([term, node]) => term !== query && node.relatedness > threshold)
     .map(([term, node]) => `${term}^${node.relatedness.toFixed(5)}`)
     .join(" ");

@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "index": "ts-node src/index.ts",
-    "demo": "ts-node src/demo.ts"
+    "demo": "ts-node src/demo.ts",
+    "query": "ts-node src/cli.ts"
   },
   "dependencies": {
     "csv-parse": "^5.5.3"

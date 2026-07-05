@@ -1,9 +1,10 @@
 # solr-semantic-knowledge-graph
 
-Proof-of-concept demonstrating <a href="https://solr.apache.org" target="_blank">Solr</a>'s **Semantic Knowledge Graph** — a technique that treats Solr's inverted index as a graph. By measuring how terms co-occur across documents, it discovers semantic relationships purely from the statistical distribution of words in your own corpus, effectively turning your search index into both a knowledge graph and a language model. No LLMs, no hand-coded synonyms, no external knowledge bases.
+Proof-of-concept demonstrating <a href="https://solr.apache.org" target="_blank">Solr</a>'s **Semantic Knowledge Graph** (SKG) — a graph implicit in your search index, where terms are nodes and the statistical relatedness between them forms weighted edges. An SKG lets you traverse and rank arbitrary semantic relationships between any content in your index, discovered purely from how terms co-occur across documents. No LLMs, no hand-coded synonyms, no external knowledge bases.
 
 ## Table of Contents
 
+- [See it in action](#see-it-in-action)
 - [What this is](#what-this-is)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
@@ -20,6 +21,39 @@ This repo shows five things you can do with that capability:
 3. **Query expansion** — turn the SKG output into a boosted query string with five different precision/recall tradeoff strategies
 4. **Content-based recommendations** — classify document terms against a category to build a recommendation query
 5. **Arbitrary relationships** — compose traversal hops to ask graph-style questions ("what is Data's *daughter*?")
+
+---
+
+## See it in action
+
+No LLM, no dictionary, no hand-coded synonyms — just corpus statistics. Query "kryptonite" on a mixed StackExchange corpus and the index discovers other DC Universe terms on its own:
+
+```
+Term                 Relatedness
+-----------------------------------
+  superman             0.81364
+  kryptonians          0.74680
+  krypton              0.73838
+  superman's           0.72344
+  kryptonian           0.72173
+  metallo              0.67029
+  smallville           0.66332
+```
+
+Chain two hops together and it can answer relationship questions with zero ontology: "who is Data's *daughter*?" surfaces the two android daughters from two different Star Trek series, decades apart:
+
+```
+Related to 'data' via 'daughter':
+Term                 Relatedness
+-----------------------------------
+  lal                  0.75212
+  dahj                 0.65383
+  juliana              0.45120
+  soong                0.36178
+  positronic           0.28918
+```
+
+Lal is Data's daughter from TNG "The Offspring"; Dahj is his daughter in Picard. Full output for all five examples — including query expansion and content-based recommendations — is in [Run the demo](#running).
 
 ---
 
@@ -163,6 +197,207 @@ npm run demo
 
 Runs five labeled examples against the indexed collections and prints results with plain-English commentary explaining each number and decision.
 
+```
+========================================================================
+Example 1 — Related Terms (health collection)
+========================================================================
+
+Query: "ibuprofen" on the health StackExchange collection.
+
+The SKG scans every term that co-occurs with "ibuprofen" posts and asks: does this
+term appear *more* in ibuprofen posts than in all posts generally? If yes, it gets
+a high relatedness score. Score guide:
+  1.0  = perfectly correlated with the query — appears only in these docs
+  0.0  = unrelated — appears at the same rate everywhere (like "the", "a")
+  < 0  = anti-correlated — less common in these docs than in the collection
+
+Term                 Relatedness
+-----------------------------------
+  advil                0.38198
+  motrin               0.36525
+  acetaminophen        0.34762
+  naproxen             0.34347
+  paracetamol          0.29004
+  nsaids               0.28541
+  steroidal            0.28378
+
+advil, motrin, acetaminophen, naproxen — the SKG found every OTC pain-relief
+synonym and generic/brand pairing purely from word distribution across 12,000+ posts.
+No medical dictionary. No hand-coded synonyms.
+
+========================================================================
+Example 2 — Domain Switch (stackexchange — sci-fi)
+========================================================================
+
+Same technique, completely different domain. Query: "kryptonite" on the combined
+StackExchange collection (health + cooking + scifi + travel + devops posts).
+
+The SKG has no idea what kryptonite is. It just notices that certain other words
+appear disproportionately often in posts that mention kryptonite. Those happen
+to be other DC Universe terms — the corpus "knows" the domain.
+
+Term                 Relatedness
+-----------------------------------
+  superman             0.81364
+  kryptonians          0.74680
+  krypton              0.73838
+  superman's           0.72344
+  kryptonian           0.72173
+  metallo              0.67029
+  smallville           0.66332
+
+superman, kryptonians, krypton, metallo, smallville — all DC Universe terms,
+surfaced without any comic book ontology. The corpus knew the domain; the code didn't.
+
+========================================================================
+Example 3 — Query Expansion (stackexchange)
+========================================================================
+"kryptonite" alone finds 299 posts. The SKG found 7 related terms:
+
+    superman       0.81  (highly correlated with kryptonite posts)
+    kryptonians    0.75  (highly correlated with kryptonite posts)
+    krypton        0.74  (highly correlated with kryptonite posts)
+    superman's     0.72  (highly correlated with kryptonite posts)
+    kryptonian     0.72  (highly correlated with kryptonite posts)
+    metallo        0.67  (highly correlated with kryptonite posts)
+    smallville     0.66  (highly correlated with kryptonite posts)
+
+We can use those terms to cast a wider or narrower net:
+
+  Baseline: search "kryptonite" only
+  → 299 posts
+
+  Strategy 1: search for kryptonite OR superman OR krypton OR any related term
+  → 2584 posts  (+764%)  Most are Superman posts that never say "kryptonite"
+
+  Strategy 2: post must contain at least 2 of the 8 terms
+  → 950 posts   (+218%)  Cuts noise — accidental single-word matches drop out
+
+  Strategy 3: post must contain at least 30% of the 8 terms (≥3 words)
+  → 950 posts   (+218%)  Same here — these terms cluster so tightly that matching 2 implies 3+
+
+  Strategy 4: "kryptonite" is required, plus at least one related term
+  → 270 posts   (-10%)  Stricter than baseline — some kryptonite posts mention none of the related terms
+
+  Strategy 5: only "kryptonite" posts, but rank by how many related terms they also mention
+  → 299 posts   (same)  Same docs as baseline, most conceptually rich ones rise to the top
+
+========================================================================
+Example 4 — Content-Based Recommendations (stackexchange)
+========================================================================
+
+Instead of a user query, we start from the terms in a document and ask: which
+of these terms are semantically relevant to "star wars"? Terms that cluster with
+Star Wars in the corpus score high. Terms from other franchises (batman, joker,
+gotham) score negative — the SKG discriminates between them. The positive-scoring
+terms then drive a recommendation query to fetch similar posts.
+
+Term relatedness to 'star wars':
+Term                 Relatedness  Note
+-------------------------------------------------------
+  luke                 0.75337
+  vader                0.71886
+  han                  0.70249
+  leia                 0.66419
+  r2-d2                0.56442
+  chewbacca            0.51749
+  c-3po                0.50649
+  gotham               0.00000  ← wrong franchise
+  joker                -0.02292  ← wrong franchise
+  batman               -0.02716  ← wrong franchise
+
+The 7 positive-scoring terms become a recommendation query. Top 5 matching posts:
+
+Top 5 recommended documents:
+  1. Has R2-D2 ever been inside the Millennium Falcon's cockpit?
+  2. Whose arms would Chewbacca have ripped off?
+  3. Why is C-3PO kept in the dark in Return of the Jedi while R2-D2 is not?
+  4. Why didn't Darth Vader follow the Millennium Falcon?
+  5. Did the Alliance and the Empire ever fight a common enemy outside of Shadows of the Empire?
+
+========================================================================
+Example 5 — Arbitrary Relationships (scifi collection)
+========================================================================
+
+Three-level traversal: "data" → "daughter" → top related terms.
+
+"daughter" is the relationship filter. We're not asking who co-occurs with Data
+generally — we're asking: of all posts about Data that also discuss a daughter,
+which characters appear disproportionately? The answer should be the specific
+characters canonically tied to that relationship, discovered purely from corpus
+statistics with no knowledge graph or ontology.
+
+Related to 'data' via 'daughter':
+Term                 Relatedness
+-----------------------------------
+  lal                  0.75212
+  dahj                 0.65383
+  juliana              0.45120
+  soong                0.36178
+  positronic           0.28918
+  androids             0.18340
+  robotics             0.18264
+
+Lal is the android daughter Data builds in TNG "The Offspring." Dahj is his
+daughter in Picard. Two characters from two different series, spanning decades
+of Star Trek — surfaced by two strategic hops through an inverted index.
+```
+
+### Query interactively
+
+```bash
+npm run query
+```
+
+Prompts for a term, runs it against the `stackexchange` collection, and prints the SKG's related-terms table — a quick way to explore relatedness on your own words without editing `demo.ts`. Type `exit` to quit.
+
+> **Note:** the CLI is a single-hop tool — one query term in, one related-terms table out. It can't do the multi-level relationship traversal shown in Example 5 below (`"data" → "daughter" → related terms`); for that, use `npm run demo` or write your own `traverse()` call with multiple `SKGNode`s (see `src/skg.ts`).
+
+```
+[stackexchange] Query (or "exit"): sith
+
+Term                 Relatedness
+-----------------------------------
+  jedi                 0.88072
+  darth                0.86224
+  palpatine            0.85524
+  sidious              0.84872
+  anakin               0.83176
+  revenge              0.82704
+  vader                0.81471
+  apprentice           0.80022
+  dooku                0.79961
+
+[stackexchange] Query (or "exit"): black panther
+
+Term                 Relatedness
+-----------------------------------
+  panther              0.78843
+  t'challa             0.74590
+  wakandan             0.55337
+  killmonger           0.52153
+  wakandans            0.46171
+  wakanda              0.41614
+  ingesting            0.24702
+  black                0.19736
+  herb                 0.19346
+  bucky                0.19239
+
+[stackexchange] Query (or "exit"): bucky
+
+Term                 Relatedness
+-----------------------------------
+  bucky's              0.77994
+  hydra's              0.44083
+  steve                0.41334
+  suv                  0.39399
+  barnes               0.38147
+  peggy                0.36061
+  cap's                0.34181
+  soldier              0.31762
+  bucharest            0.28756
+```
+
 ---
 
 ## What each example shows
@@ -171,7 +406,7 @@ Runs five labeled examples against the indexed collections and prints results wi
 
 **Example 2 — Domain Switch (stackexchange):** Runs the exact same code against a multi-domain collection using the query "kryptonite". Without any external dictionary, the SKG immediately shifts domains to surface *superman*, *kryptonians*, and *smallville*.
 
-**Example 3 — Query Expansion (stackexchange):** Explores 5 distinct strategies to turn SKG terms into boosted Solr queries. Demonstrates how to balance precision and recall — an OR strategy expands matches by +755%, while a stricter "required + optional boost" strategy targets the highest-quality 268 posts.
+**Example 3 — Query Expansion (stackexchange):** Explores 5 distinct strategies to turn SKG terms into boosted Solr queries. Demonstrates how to balance precision and recall — an OR strategy expands matches by +764%, while a stricter "required + optional boost" strategy targets the highest-quality 270 posts.
 
 **Example 4 — Content-Based Recommendations (stackexchange):** Classifies a mixed bag of pop-culture terms against a "star wars" foreground. Sci-fi terms score high, while DC comics terms (*gotham*, *batman*) score *negative*, filtering out the noise. Converts the positive terms into a boosted recommendation string to fetch highly relevant documents.
 

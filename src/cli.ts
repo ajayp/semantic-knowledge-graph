@@ -7,6 +7,9 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 let closed = false;
 rl.on("close", () => { closed = true; });
 
+// Re-sends the whole path from scratch on every hop since we don't know where the
+// user will go next. If we ever need a fixed, known-ahead-of-time tree (multiple
+// branches, not just a chain), buildRequest can nest it all into one request instead.
 async function traversePath(path: string[]): Promise<Map<string, ValueNode> | undefined> {
   const hopNodes = path.map((term, i) => ({
     field: "title body",

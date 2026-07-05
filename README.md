@@ -9,6 +9,7 @@ Proof-of-concept demonstrating <a href="https://solr.apache.org" target="_blank"
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Running](#running)
+  - [Run the demo examples](#run-the-demo-examples)
 - [What each example shows](#what-each-example-shows)
 - [Architecture](#architecture)
 
@@ -26,7 +27,81 @@ This repo shows five things you can do with that capability:
 
 ## See it in action
 
-No LLM, no dictionary, no hand-coded synonyms — just corpus statistics. Query "kryptonite" on a mixed StackExchange corpus and the index discovers other DC Universe terms on its own:
+No LLM, no dictionary, no hand-coded synonyms — just corpus statistics. The fastest way to see it is the interactive CLI: query a term, then keep typing terms to drill down hop by hop through the graph — each hop is a relationship filter on top of the last.
+
+```bash
+npm run query
+```
+
+```
+========================================================================
+  SOLR SEMANTIC KNOWLEDGE GRAPH
+========================================================================
+  Collection: stackexchange
+  Enter a term to see what the corpus finds related to it.
+  Then enter another term to drill down a hop (relationship filter).
+  Commands: "back" (undo last hop), "reset" (start over), "exit".
+
+[stackexchange] Query (or "exit"): vader
+
+Term                 Relatedness
+-----------------------------------
+  darth                0.89893
+  luke                 0.85982
+  vader's              0.85408
+  anakin               0.82881
+  emperor              0.82367
+  jedi                 0.81590
+  sith                 0.81468
+  obi                  0.81406
+  wan                  0.80564
+
+[stackexchange] vader > son
+
+Term                 Relatedness
+-----------------------------------
+  luke                 0.76840
+  vader's              0.74034
+  emperor              0.72557
+  skywalker            0.71956
+  darth                0.70199
+  anakin               0.69547
+  luke's               0.68772
+  foreseen             0.58441
+
+[stackexchange] vader > son > luke
+
+Term                 Relatedness
+-----------------------------------
+  vader's              0.73816
+  emperor              0.73112
+  skywalker            0.70975
+  luke's               0.70437
+  anakin               0.66875
+  darth                0.65246
+  foreseen             0.62714
+
+[stackexchange] vader > son > luke > back
+
+Term                 Relatedness
+-----------------------------------
+  luke                 0.76840
+  vader's              0.74034
+  emperor              0.72557
+  ...
+
+[stackexchange] vader > son > reset
+
+[stackexchange] Query (or "exit"): exit
+```
+
+Two strategic hops and no knowledge graph: ask "who is Vader's *son*?" and the top answer is *luke* — the corpus reconstructs "I am your father" purely from word co-occurrence across StackExchange posts, no screenplay or Wookieepedia required. A third hop (`vader > son > luke`) narrows further to characters and terms tied to Luke's own story. `back` undoes the last hop, `reset` starts over.
+
+Prefer reading over running commands? [Jump straight to the demo output](#run-the-demo-examples) — five annotated examples covering all five capabilities, no setup required.
+
+---
+
+Query "kryptonite" on a mixed StackExchange corpus and the index discovers other DC Universe terms on its own:
 
 ```
 Term                 Relatedness
@@ -53,7 +128,7 @@ Term                 Relatedness
   positronic           0.28918
 ```
 
-Lal is Data's daughter from TNG "The Offspring"; Dahj is his daughter in Picard. Full output for all five examples — including query expansion and content-based recommendations — is in [Run the demo](#running).
+Lal is Data's daughter from TNG "The Offspring"; Dahj is his daughter in Picard. These are two of five examples — full output including query expansion and content-based recommendations is in [Run the demo examples](#run-the-demo-examples).
 
 ---
 
@@ -189,7 +264,7 @@ health: 12892 documents indexed
 stackexchange: 389109 documents indexed
 ```
 
-### Run the demo
+### Run the demo examples
 
 ```bash
 npm run demo
@@ -349,9 +424,7 @@ of Star Trek — surfaced by two strategic hops through an inverted index.
 npm run query
 ```
 
-Prompts for a term, runs it against the `stackexchange` collection, and prints the SKG's related-terms table — a quick way to explore relatedness on your own words without editing `demo.ts`. Type `exit` to quit.
-
-> **Note:** the CLI is a single-hop tool — one query term in, one related-terms table out. It can't do the multi-level relationship traversal shown in Example 5 below (`"data" → "daughter" → related terms`); for that, use `npm run demo` or write your own `traverse()` call with multiple `SKGNode`s (see `src/skg.ts`).
+Prompts for a term, runs it against the `stackexchange` collection, and prints the SKG's related-terms table — a quick way to explore relatedness on your own words without editing `demo.ts`. Enter another term afterward to drill down a hop (a relationship filter on top of the current path, same technique as Example 5's `"data" → "daughter"` traversal). Type `back` to undo the last hop, `reset` to start over, or `exit` to quit. See [See it in action](#see-it-in-action) above for a full multi-hop transcript.
 
 ```
 [stackexchange] Query (or "exit"): sith
@@ -368,20 +441,22 @@ Term                 Relatedness
   apprentice           0.80022
   dooku                0.79961
 
-[stackexchange] Query (or "exit"): black panther
+[stackexchange] sith > apprentice
 
 Term                 Relatedness
 -----------------------------------
-  panther              0.78843
-  t'challa             0.74590
-  wakandan             0.55337
-  killmonger           0.52153
-  wakandans            0.46171
-  wakanda              0.41614
-  ingesting            0.24702
-  black                0.19736
-  herb                 0.19346
-  bucky                0.19239
+  sidious              0.83040
+  darth                0.80750
+  apprentices          0.77806
+  plagueis             0.77609
+  palpatine            0.75680
+  maul                 0.74240
+  zannah               0.73174
+  dooku                0.71495
+
+[stackexchange] sith > apprentice > back
+
+[stackexchange] sith > reset
 
 [stackexchange] Query (or "exit"): bucky
 

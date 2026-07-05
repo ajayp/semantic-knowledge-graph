@@ -1,6 +1,6 @@
-# solr-semantic-knowledge-graph
+# semantic-knowledge-graph
 
-A proof-of-concept for [Solr](https://solr.apache.org)'s **Semantic Knowledge Graph** (SKG): a graph hiding inside your search index, where terms are nodes and how often they co-occur becomes the weight on the edges between them. Once it's built, you can walk that graph to find and rank semantic relationships between any content in your index — no LLMs, no hand-coded synonym lists, no external knowledge base required.
+A proof-of-concept using [Solr](https://solr.apache.org)'s **Semantic Knowledge Graph** (SKG): a graph hiding inside your search index, where terms are nodes and how often they co-occur becomes the weight on the edges between them. Once it's built, you can walk that graph to find and rank semantic relationships between any content in your index — no LLMs, no hand-coded synonym lists, no external knowledge base required.
 
 ## Table of Contents
 
@@ -157,7 +157,7 @@ data/
 
 ```bash
 git clone <this-repo>
-cd solr-semantic-knowledge-graph
+cd <repo-folder>
 
 # Decompress the data files
 gunzip data/cooking/posts.csv.gz \
